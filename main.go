@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/tealeg/xlsx"
 )
@@ -39,10 +40,12 @@ func main() {
 				file.Close()
 			}
 		}
-	} else {
+	} else if *fileType == "csv" {
 		for _, sheet := range file.Sheets {
 			createCSV(sheet)
 		}
+	} else if *fileType == "proto" {
+		createProto("SimTable", "MSG", file)
 	}
 
 	//파일 트레이싱
@@ -189,4 +192,48 @@ func createCSV(sheet *xlsx.Sheet) {
 	}
 
 	csvwriter.Flush()
+}
+
+func createProto(fileName string, packageName string, file *xlsx.File) {
+	proto := "syntax = \"proto2\";\r\n"
+	proto = proto + "package " + packageName + ";\r\n"
+	proto = proto + "\r\n"
+
+	for _, sheet := range file.Sheets {
+		proto = proto + "message " + sheet.Name + " {\r\n"
+
+		tableName := sheet.Rows[1].Cells[0].String()
+		cellcount := len(sheet.Rows[6].Cells)
+
+		types := make([]string, cellcount)
+		for i, cell := range sheet.Rows[4].Cells {
+			types[i] = cell.String()
+		}
+		proto = proto + "\tmessage " + tableName + " {\r\n"
+
+		//columns := make([]string, cellcount)
+		for i, cell := range sheet.Rows[6].Cells {
+			proto = proto + "\t\trequired "
+			if types[i] == "UInt32" {
+				proto = proto + "uint32 "
+			} else if types[i] == "String" {
+				proto = proto + "string "
+			}
+
+			proto = proto + cell.String() + " = " + strconv.Itoa(i+1) + ";\r\n"
+		}
+		proto = proto + "\t}\r\n"
+		proto = proto + "\trequired string TableName = 1;\r\n"
+		proto = proto + "\trepeated " + tableName + " Data = 2;\r\n"
+
+		proto = proto + "}\r\n\r\n"
+	}
+
+	outFile, err := os.Create(fmt.Sprintf("%s.proto", fileName))
+	defer outFile.Close()
+	if err != nil {
+		return
+	}
+
+	outFile.WriteString(proto)
 }
